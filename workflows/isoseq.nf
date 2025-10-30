@@ -11,22 +11,6 @@ include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_isos
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CONFIG FILES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-ch_multiqc_config          = Channel.fromPath("$projectDir/assets/multiqc_config.yml", checkIfExists: true)
-ch_multiqc_custom_config   = params.multiqc_config ? Channel.fromPath( params.multiqc_config, checkIfExists: true ) : Channel.empty()
-ch_multiqc_logo            = params.multiqc_logo   ? Channel.fromPath( params.multiqc_logo, checkIfExists: true ) : Channel.empty()
-ch_multiqc_custom_methods_description = params.multiqc_methods_description ? file(params.multiqc_methods_description, checkIfExists: true) : file("$projectDir/assets/methods_description_template.yml", checkIfExists: true)
-//ch_multiqc_config = [
-//                        file("$projectDir/assets/multiqc_config.yml"           , checkIfExists: true),
-//                        file("$projectDir/assets/nf-core-isoseq_logo_light.png", checkIfExists: true)
-//                    ]
-//ch_multiqc_custom_config = params.multiqc_config ? Channel.fromPath(params.multiqc_config) : Channel.empty()
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT LOCAL MODULES/SUBWORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -67,7 +51,6 @@ include { ULTRA_ALIGN }                         from '../modules/nf-core/ultra/a
 include { GSTAMA_COLLAPSE }                     from '../modules/nf-core/gstama/collapse/main'
 include { GSTAMA_MERGE }                        from '../modules/nf-core/gstama/merge/main'
 include { GSTAMA_MERGE as GSTAMA_MERGE_ALL }    from '../modules/nf-core/gstama/merge/main'
-include { CUSTOM_DUMPSOFTWAREVERSIONS }         from '../modules/nf-core/custom/dumpsoftwareversions/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,8 +66,8 @@ workflow ISOSEQ {
     //
     // SET UP VERSIONS CHANNELS
     //
-    ch_versions = Channel.empty()
-    ch_multiqc_files = Channel.empty()
+    ch_versions = channel.empty()
+    ch_multiqc_files = channel.empty()
 
     //
     // START PIPELINE
@@ -103,29 +86,31 @@ workflow ISOSEQ {
         SET_CHUNK_NUM_CHANNEL(params.input, params.chunk) // - PBCCS parallelization
 
         ch_subreads_bam = ch_samplesheet.filter { meta, _bam, _pbi -> meta.bam_type != "ccs" } // To cater to bam_type == null which implies subreads
-        ch_ccs_bam = ch_samplesheet.filter { meta, _bam, _pbi -> meta.bam_type == "ccs" }
+        ch_ccs_bam      = ch_samplesheet.filter { meta, _bam, _pbi -> meta.bam_type == "ccs" }
 
-        PBCCS(ch_subreads_bam, SET_CHUNK_NUM_CHANNEL.out.chunk_num, params.chunk) // Generate CCS from raw reads
+        PBCCS(
+            ch_subreads_bam,
+            SET_CHUNK_NUM_CHANNEL.out.chunk_num,
+            params.chunk) // Generate CCS from raw reads
+
         PBCCS.out.bam // Update meta: update id (+chunkX) and store former id
-        .map {
-            def chk       = (it[1] =~ /.*\.(chunk\d+)\.bam/)[ 0 ][ 1 ]
-            def id_former = it[0].id
-            def id_new    = it[0].id + "." + chk
-            return [ [id:id_new, id_former:id_former, single_end:true], it[1] ]
+        .map { meta, file ->
+            def chk       = (file =~ /.*\.(chunk\d+)\.bam/)[0][1]
+            def id_former = meta.id
+            def id_new    = meta.id + "." + chk
+            return [ [id:id_new, id_former:id_former, single_end:true], file ]
         }
-        .mix (
-            ch_ccs_bam.map { meta, bam, _nothing -> [ [id:meta.id, id_former:meta.id, single_end:true], bam ] }
-        )
+        .mix (ch_ccs_bam.map { meta, bam, _nothing -> [ [id:meta.id, id_former:meta.id, single_end:true], bam ] })
         .set { ch_pbccs_bam_updated }
 
-        ch_lima_input = params.skip_lima ? Channel.empty() : ch_pbccs_bam_updated
+        ch_lima_input = params.skip_lima ? channel.empty() : ch_pbccs_bam_updated
         LIMA(ch_lima_input, SET_PRIMERS_CHANNEL.out.data)  // Remove primers from CCS
 
         ch_isoseq_refine_input = params.skip_lima ? ch_pbccs_bam_updated : LIMA.out.bam
         ISOSEQ_REFINE(ch_isoseq_refine_input, SET_PRIMERS_CHANNEL.out.data) // Discard CCS without polyA tails, remove it from the other
 
-        BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)                   // Convert bam to fasta
-        GSTAMA_POLYACLEANUP(BAMTOOLS_CONVERT.out.data)            // Clean polyA tails from reads
+        BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)        // Convert bam to fasta
+        GSTAMA_POLYACLEANUP(BAMTOOLS_CONVERT.out.data) // Clean polyA tails from reads
     }
 
 
@@ -140,20 +125,36 @@ workflow ISOSEQ {
 
     // Align FLNCs: User can choose between minimap2 and uLTRA aligners
     if (params.aligner == "ultra") {
-        GNU_SORT(SET_GTF_CHANNEL.out.data.map { it -> [ [id:'genome'], it ]  } )          // Sort GTF on sequence and start, uLTRA index fails with topological sort
-        ULTRA_INDEX(SET_FASTA_CHANNEL.out.data, GNU_SORT.out.sorted.map { it[1] })        // Index GTF file before alignment
-        GUNZIP(ch_reads_to_map)                                                           // uncompress fastas (gz not supported by uLTRA)
-        ULTRA_ALIGN(GUNZIP.out.gunzip, SET_FASTA_CHANNEL.out.data, ULTRA_INDEX.out.index) // Align read against genome
-        GSTAMA_COLLAPSE(ULTRA_ALIGN.out.bam, SET_FASTA_CHANNEL.out.data)                  // Clean gene models
+        GNU_SORT(SET_GTF_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] } ) // Sort GTF on sequence and start, uLTRA index fails with topological sort
+        ULTRA_INDEX(                                                            // Index GTF file before alignment
+            SET_FASTA_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] },
+            GNU_SORT.out.sorted)
+        GUNZIP(ch_reads_to_map)                                                 // uncompress fastas (gz not supported by uLTRA)
+
+        // The ultra index channel must be the same size as the reads/GUNZIP channel.
+        // join: gather all index files into one channel
+        // combine: duplicates index tuples to match number of reads
+        // map: remove read and its meta as we don't need them
+        ch_ultra_index =
+            ULTRA_INDEX.out.pickle
+            .join(ULTRA_INDEX.out.database)
+            .combine(GUNZIP.out.gunzip)
+            .map { meta1, pickle, db, meta2, reads -> [meta1, pickle, db] }
+
+        ULTRA_ALIGN(
+            GUNZIP.out.gunzip,
+            SET_FASTA_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] },
+            ch_ultra_index)                                                     // Align read against genome
+        GSTAMA_COLLAPSE(ULTRA_ALIGN.out.bam, SET_FASTA_CHANNEL.out.data)        // Clean gene models
     }
     else if (params.aligner == "minimap2") {
         MINIMAP2_ALIGN(                    // Align read against genome
             ch_reads_to_map,
             [ [id:"Dummy"], file(params.fasta) ],
-            Channel.value(true),
-            Channel.value("bai"),
-            Channel.value(false),
-            Channel.value(false))
+            channel.value(true),
+            channel.value("bai"),
+            channel.value(false),
+            channel.value(false))
         GSTAMA_COLLAPSE(MINIMAP2_ALIGN.out.bam, SET_FASTA_CHANNEL.out.data) // Clean gene models
     }
 
@@ -162,12 +163,12 @@ workflow ISOSEQ {
         .groupTuple()
         .set { ch_tcollapse }
 
-    cap_value = params.capped == true ? Channel.value("capped") : Channel.value("no_cap")
+    cap_value = params.capped == true ? channel.value("capped") : channel.value("no_cap")
 
     GSTAMA_FILELIST( // Generate the filelist file needed by TAMA merge
     ch_tcollapse,
     cap_value,
-    Channel.value("1,1,1"))
+    channel.value("1,1,1"))
 
     ch_tcollapse // Synchronized bed files produced by TAMA collapse with file list file generated by GSTAMA_FILELIST
         .join( GSTAMA_FILELIST.out.tsv )
@@ -176,7 +177,7 @@ workflow ISOSEQ {
     GSTAMA_MERGE(ch_tmerge_in.map { [ it[0], it[1] ] }, ch_tmerge_in.map { it[2] }) // Merge all bed files from one sample into a uniq bed file
 
     // Merge all bed files from all samples into a uniq bed file
-    ( params.tama_merge_all ? GSTAMA_MERGE.out.bed : Channel.empty() )
+    ( params.tama_merge_all ? GSTAMA_MERGE.out.bed : channel.empty() )
         .map { _meta, bed -> [ [ id: "all_samples" ], bed ] }
         .groupTuple()
         .filter { _meta, beds -> beds.size() > 1 } // Only merge if there are more than one bed file
@@ -185,7 +186,7 @@ workflow ISOSEQ {
     GSTAMA_FILELIST_ALL(
         ch_merge_all_filelist_input,
         cap_value,
-        Channel.value("1,1,1")
+        channel.value("1,1,1")
     )
 
     ch_merge_all_filelist_input
@@ -223,50 +224,41 @@ workflow ISOSEQ {
     ch_versions = ch_versions.mix(GSTAMA_MERGE_ALL.out.versions)
 
     //
-    // MODULE: CUSTOM_DUMPSOFTWAREVERSIONS
+    // Collate and save software versions
     //
-    CUSTOM_DUMPSOFTWAREVERSIONS (
-        ch_versions.unique().collectFile(name: 'collated_versions.yml')
-    )
-
-
+    version_yaml = softwareVersionsToYAML(ch_versions)
+        .collectFile(
+            storeDir: "${params.outdir}/pipeline_info",
+            name: 'nf_core_isoseq_software_mqc_versions.yml',
+            sort: true,
+            newLine: true)
+        .view()
 
     //
     // MODULE: MultiQC
     //
-    ch_multiqc_config        = Channel.fromPath(
-        "$projectDir/assets/multiqc_config.yml", checkIfExists: true)
-    ch_multiqc_custom_config = params.multiqc_config ?
-        Channel.fromPath(params.multiqc_config, checkIfExists: true) :
-        Channel.empty()
-    ch_multiqc_logo          = params.multiqc_logo ?
-        Channel.fromPath(params.multiqc_logo, checkIfExists: true) :
-        Channel.empty()
+    ch_multiqc_config        = channel.fromPath("$projectDir/assets/multiqc_config.yml", checkIfExists: true)
+    ch_multiqc_custom_config = params.multiqc_config ? channel.fromPath(params.multiqc_config, checkIfExists: true) : channel.empty()
+    ch_multiqc_logo          = params.multiqc_logo   ? channel.fromPath(params.multiqc_logo  , checkIfExists: true) : channel.empty()
 
-    summary_params      = paramsSummaryMap(
-        workflow, parameters_schema: "nextflow_schema.json")
-    ch_workflow_summary = Channel.value(paramsSummaryMultiqc(summary_params))
+    summary_params      = paramsSummaryMap(workflow, parameters_schema: "nextflow_schema.json")
+    ch_workflow_summary = channel.value(paramsSummaryMultiqc(summary_params))
+    ch_multiqc_files    = ch_multiqc_files.mix(ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
+    ch_multiqc_custom_methods_description =
+        params.multiqc_methods_description ?
+            file(params.multiqc_methods_description, checkIfExists: true) :
+            file("${projectDir}/assets/methods_description_template.yml", checkIfExists: true)
+    ch_methods_description = channel.value(methodsDescriptionText(ch_multiqc_custom_methods_description))
 
-    ch_multiqc_files = Channel.empty()
-    ch_multiqc_files = ch_multiqc_files.mix(ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
+    ch_multiqc_files = ch_multiqc_files.mix(version_yaml)
+    ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml', sort: true))
+
     // ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     if (params.entrypoint == "isoseq") {
         ch_multiqc_files = ch_multiqc_files.mix(PBCCS.out.report_json.collect{it[1]}.ifEmpty([]))
         ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.summary.collect{it[1]}.ifEmpty([]))
         ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.counts.collect{it[1]}.ifEmpty([]))
     }
-
-    ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
-
-    ch_multiqc_files = ch_multiqc_files.mix(
-        ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
-    // ch_multiqc_files = ch_multiqc_files.mix(ch_collated_versions)
-    // ch_multiqc_files = ch_multiqc_files.mix(
-    //     ch_methods_description.collectFile(
-    //         name: 'methods_description_mqc.yaml',
-    //         sort: true
-    //     )
-    // )
 
     MULTIQC (
         ch_multiqc_files.collect(),
@@ -277,7 +269,8 @@ workflow ISOSEQ {
         channel.empty()
     )
 
-    emit:multiqc_report = MULTIQC.out.report.toList() // channel: /path/to/multiqc_report.html
+    emit:
+    multiqc_report = MULTIQC.out.report.toList() // channel: /path/to/multiqc_report.html
     versions       = ch_versions                 // channel: [ path(versions.yml) ]
 
 }
