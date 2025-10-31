@@ -13,40 +13,37 @@
                 "errorMessage": "Sample name must be provided and cannot contain spaces",
                 "meta": ["id"]
             },
-            "bam_type": {
+            "seq_data": {
+                "type": "string",
+                "pattern": "(^\\S+\\.bam$|^\\S+\\.fa$|^\\S+\\.fa.gz$)",
+                "format": "file-path",
+                "errorMessage": "Sequence data file must be provided, cannot contain spaces and must have extension '.bam' or '.fa'"
+            },
+            "pbi": {
                 "anyOf": [
                     {
                         "type": "string",
-                        "pattern": "^subreads|ccs$",
+                        "pattern": "^\\S+\\.bam.pbi$",
                         "format": "file-path"
                     },
                     {
                         "type": "string",
-                        "maxLength": 0
+                        "pattern": "^none$",
+                        "format": "string"
                     }
                 ],
-                "errorMessage": "BAM type should be either 'subreads' or 'ccs'. If missing, it is assumed to be 'subreads'",
-                "meta": ["bam_type"]
+                "errorMessage": "PacBio Index file for BAM subreads cannot contain spaces and must have extension '.bam.pbi' or being empty"
             },
-            "bam": {
+            "start_from": {
                 "type": "string",
-                "pattern": "(^\\S+\\.bam$|^None$)",
-                "errorMessage": "Subreads/CCS BAM file must be provided, cannot contain spaces and must have extension '.bam' or being 'None' if the entrypoint is 'map'"
-            },
-            "pbi": {
-                "type": "string",
-                "pattern": "(^\\S+\\.bam\\.pbi$|^None$)",
-                "errorMessage": "PacBio Index file for BAM subreads cannot contain spaces and must have extension '.bam.pbi' or being 'None' if the entrypoint is 'map' or if the BAM file is CCS"
-            },
-            "reads": {
-                "type": "string",
-                "pattern": "(^\\S+\\.fa\\.gz$|^None$)",
-                "errorMessage": "Long reads file cannot contain spaces and must have extension '.bam.pbi' or being 'None' if the entrypoint is 'isoseq'"
+                "pattern": "^ccs|lima|refine|mapping$",
+                "errorMessage": "start_from should be one of: ccs, lima, refine, mapping",
+                "meta": ["start_from"]
             }
         },
-        "required": ["sample"],
+        "required": ["sample", "seq_data", "start_from"],
         "dependentRequired": {
-            "bam_type": ["bam"]
+            "start_from": ["sample"]
         }
     }
 }
