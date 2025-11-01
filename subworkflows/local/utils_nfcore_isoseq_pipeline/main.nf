@@ -103,7 +103,7 @@ workflow PIPELINE_INITIALISATION {
     channel
         .fromList(
             samplesheetToList(
-                params.input, 
+                params.input,
                 "${projectDir}/assets/schema_input.json"))
         .flatMap { it -> create_samplesheet_channel(it, params.chunk_ccs) }
         .set { ch_samplesheet }
@@ -290,14 +290,14 @@ def create_samplesheet_channel(row, chunk) {
         if (!file(row[2]).exists()) {
             exit 1, "ERROR: Please check input samplesheet -> PBI file does not exist!\n${row[2]}"
         }
-        
+
         return (1..chunk).collect { [ row[0], file(row[1]), file(row[2]) ] }
-        
+
     }
-    else if ( row[0].start_from in ['lima', 'refine']) { 
+    else if ( row[0].start_from in ['lima', 'refine']) {
         return [ [
             [
-                id:row[0].id + ".chunk1", 
+                id:row[0].id + ".chunk1",
                 id_former:row[0].id,
                 start_from:row[0].start_from
             ],
@@ -305,10 +305,10 @@ def create_samplesheet_channel(row, chunk) {
             null
         ] ]
     }
-    else if ( row[0].start_from == 'mapping') { 
+    else if ( row[0].start_from == 'mapping') {
         return [ [
             [
-                id:row[0].id, 
+                id:row[0].id,
                 start_from:row[0].start_from,
                 single_end:true
             ],
