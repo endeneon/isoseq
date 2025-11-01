@@ -125,18 +125,6 @@ The pipeline is built using [Nextflow](https://www.nextflow.io/) and processes d
 
 [`MINIMAP2`](https://github.com/lh3/minimap2) or [`uLTRA`](https://github.com/ksahlin/ultra) aligns reads ont the genome.
 
-### BIOPERL
-
-<details markdown="1">
-<summary>Output files</summary>
-
-- `06.3_PERL_BIOPERL/`
-  - `<sample>.chunk<X>_filtered.sam`: The aligned reads with spurious alignments removed.
-
-</details>
-
-[BIOPERL](https://bioperl.org/) Some CIGAR string sometimes with a gap (N). This can happen when using GFF file converted to GTF file. See [Issue #11](https://github.com/ksahlin/ultra/issues/11) from uLTRA repo.
-
 ### TAMA COLLAPSE
 
 <details markdown="1">

@@ -61,11 +61,15 @@ First, prepare a samplesheet with your input data that looks as follows:
 `samplesheet.csv`:
 
 ```csv
-sample,bam,pbi,reads
-sample1,sample1.subreads.bam,sample1.subreads.bam.pbi,None
+sample,seq_data,pbi,start_from
+sample1,sample1.subreads.bam,sample1.subreads.bam.pbi,ccs
+sample2,sample2.ccs.bam,none,lima
+sample3,sample3.fl.primer_5p--primer_3p.bam,none,refine
+sample4,sample4.long_reads.fa.gz,none,mapping
 ```
 
-Each row represents a pair of raw subreads and it's associated pacbio index (pbi) file fastq files.
+The file list all datasets to analyse. Those datasets can be raw subreads, Circular Consensus Sequences (CCS), Full Length sequences produced by LIMA (Pacbio software suite), or long reads sequence Pacbio Hifi (or Oxford Nanopore long reads!)
+The first column define the sample ID, the second sequence data file, the third PacBio Index file (subreads only) and the program where to start the analysis. 
 
 Now, you can run the pipeline using:
 
