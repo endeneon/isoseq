@@ -25,13 +25,12 @@ Use `--input` parameter to specify its location.
 
 The samplesheet is a comma-separated file with 4 columns, and a header row as shown in the examples below.
 
-| Column       | Description                                                                                                                                                                                                                             |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sample`     | Sample name. Spaces in sample names are automatically converted to underscores (`_`).                                                                                                                                                   |
-| `seq_data`   | The path to the sequence file. A BAM file for subreads, Consensus Circular Sequences or Full Length sequences. A fasta file for long reads.                                                                                             |
+| Column       | Description                                                                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample`     | Sample name. Spaces in sample names are automatically converted to underscores (`_`).                                                                                                                                                     |
+| `seq_data`   | The path to the sequence file. A BAM file for subreads, Consensus Circular Sequences or Full Length sequences. A fasta file for long reads.                                                                                               |
 | `pbi`        | In case `seq_data` is a subreads BAM, the path to Pacbio index generated with [pbindex](https://github.com/pacificbiosciences/pbbam/). File's name must be compose of bam file name with the `.pbi` extension. In the other cases, `none` |
-| `start_from` | The value depend of the seq_data file. `ccs` for subreads, `lima` for ccs sequences, `refine` for Full Length data and `mapping` for long reads.                                                                                        |
-
+| `start_from` | The value depend of the seq_data file. `ccs` for subreads, `lima` for ccs sequences, `refine` for Full Length data and `mapping` for long reads.                                                                                          |
 
 ```csv
 sample,seq_data,pbi,start_from
@@ -41,7 +40,7 @@ sample3,sample3.fl.primer_5p--primer_3p.bam,none,refine
 sample4,sample4.long_reads.fa.gz,none,mapping
 ```
 
-If multiple cells have been run for the same sample, the sample ID can be used several time in the samplesheet. Each dataset will be annalysed in parallel and then be merge with TAMA. 
+If multiple cells have been run for the same sample, the sample ID can be used several time in the samplesheet. Each dataset will be annalysed in parallel and then be merge with TAMA.
 
 ```csv
 sample,seq_data,pbi,start_from
@@ -88,7 +87,6 @@ Two aligners are available. The `uLTRA` aligner helps to detect small exons with
 ```console
 --aligner '[ultra,minimap2]'
 ```
-
 
 ## Running the pipeline
 

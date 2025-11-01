@@ -69,7 +69,7 @@ sample4,sample4.long_reads.fa.gz,none,mapping
 ```
 
 The file list all datasets to analyse. Those datasets can be raw subreads, Circular Consensus Sequences (CCS), Full Length sequences produced by LIMA (Pacbio software suite), or long reads sequence Pacbio Hifi (or Oxford Nanopore long reads!)
-The first column define the sample ID, the second sequence data file, the third PacBio Index file (subreads only) and the program where to start the analysis. 
+The first column define the sample ID, the second sequence data file, the third PacBio Index file (subreads only) and the program where to start the analysis.
 
 Now, you can run the pipeline using:
 

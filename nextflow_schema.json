@@ -172,7 +172,7 @@
                 },
                 "tama_merge_all": {
                     "type": "boolean",
-                    "default": false, 
+                    "default": false,
                     "description": "TAMA merge: merge the sample-wise annotations into a single annotation?",
                     "help_text": "By default, the pipeline one anntation per sample. \nAdding this option will compute an addiontional annotation by merging all samples.",
                     "fa_icon": "fas fa-question-circle"
