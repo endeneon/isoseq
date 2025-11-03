@@ -18,10 +18,11 @@ include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_isos
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
 //
-include { SET_CHUNK_NUM_CHANNEL }                    from '../subworkflows/local/set_chunk_num_channel'
-include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL }   from '../subworkflows/local/set_value_channel'
-include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL }     from '../subworkflows/local/set_value_channel'
+include { SET_CHUNK_NUM_CHANNEL                    } from '../subworkflows/local/set_chunk_num_channel'
+include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL   } from '../subworkflows/local/set_value_channel'
+include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL     } from '../subworkflows/local/set_value_channel'
 include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel'
+include { CHUNKER                                  } from '../subworkflows/local/chunker'
 
 //
 // MODULE: Local to the pipeline
@@ -124,26 +125,11 @@ workflow ISOSEQ {
     BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)        // Convert bam to fasta
     GSTAMA_POLYACLEANUP(BAMTOOLS_CONVERT.out.data) // Clean polyA tails from reads
 
+    GSTAMA_POLYACLEANUP.out.fasta.view { meta, fa -> println("GSTAMA_POLYACLEANUP.out.fasta: $meta | $fa") }
+    CHUNKER(GSTAMA_POLYACLEANUP.out.fasta, ch_seq_data.mapping, params.chunk_mapping)
+    CHUNKER.out.fasta.view { meta, fa -> println("CHUNKER.out.fasta: $meta | $fa") }
+
     // MAPPING: Split samplesheet's fasta files, add them to the queue and run mapping
-    GSTAMA_POLYACLEANUP.out.fasta
-        .concat(
-            ch_seq_data.mapping
-                .map { meta, fa, _pbi  -> [ meta, fa ] }
-                .splitFasta(
-                    by: params.chunk_mapping,
-                    decompress: true,
-                    file: "chunk",
-                    compress: true
-                )
-                .map { meta, file ->
-                    def chk = (file =~ /(chunk\.\d+)\.gz/)[ 0 ][ 1 ]
-                    def id_former = meta.id
-                    def id_new    = meta.id + "." + chk
-                    [ [ id:id_new, id_former:id_former ] , file ]
-                }
-            )
-        .set { ch_reads_to_map }
-    // ch_reads_to_map.view { meta, bam -> println("ch_reads_to_map: $meta | $bam") }
 
     // Align FLNCs: User can choose between minimap2 and uLTRA aligners
     if (params.aligner == "ultra") {
@@ -151,7 +137,7 @@ workflow ISOSEQ {
         ULTRA_INDEX(                                                            // Index GTF file before alignment
             SET_FASTA_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] },
             GNU_SORT.out.sorted)
-        GUNZIP(ch_reads_to_map)                                                 // uncompress fastas (gz not supported by uLTRA)
+        GUNZIP(CHUNKER.out.fasta)                                                 // uncompress fastas (gz not supported by uLTRA)
 
         // The ultra index channel must be the same size as the reads/GUNZIP channel.
         // join: gather all index files into one channel
@@ -171,8 +157,8 @@ workflow ISOSEQ {
     }
     else if (params.aligner == "minimap2") {
         MINIMAP2_ALIGN(                    // Align read against genome
-            ch_reads_to_map,
-            [ [id:"Dummy"], file(params.fasta) ],
+            CHUNKER.out.fasta,
+            [ [id:'genome'], file(params.fasta) ],
             channel.value(true),
             channel.value("bai"),
             channel.value(false),
