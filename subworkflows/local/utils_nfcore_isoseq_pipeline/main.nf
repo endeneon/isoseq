@@ -297,8 +297,7 @@ def create_samplesheet_channel(row, chunk) {
     else if ( row[0].start_from in ['lima', 'refine']) {
         return [ [
             [
-                id:row[0].id + ".chunk1",
-                id_former:row[0].id,
+                id:row[0].id,
                 start_from:row[0].start_from
             ],
             file(row[1]),
