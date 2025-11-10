@@ -4,41 +4,40 @@
 
 workflow CHUNKER {
     take:
-    ch_refine_output     // Channel: [ meta[id, start_from ], fasta ]
-    ch_input_mapping     // Channel: [ meta[id, start_from ], fasta, pbi ]
-    chunk_mapping // value: integer (number of chunk to create)
+    ch_input_fastas // Channel: [ meta[id, start_from ], fasta ]
+    chunk           // value: integer (number of chunk to create)
+    in_decompress   // value: true or false
+    out_compress    // value: true or false
 
     main:
-    ch_refine_output
-        .branch { meta, _fasta ->
-            not_chunked : meta.start_from in [ "lima", "refine" ]
-            chunked     : meta.start_from == "ccs"
-        }
-        .set { ch_seq_data }
+    // ch_input_fastas.view { meta, fa -> println("CHUNKER:ch_input_fastas: $meta | $fa") }
 
-    ch_seq_data
-        .not_chunked
-        .concat(ch_input_mapping.map { meta, fasta, _pbi -> [ meta, fasta ] })
+    ch_input_fastas
+        .branch { meta, _fasta ->
+            chunk   :   meta.id =~ /chunk/
+            to_chunk: !(meta.id =~ /chunk/)
+        }
+        .set { ch_input_fastas_branched }
+
+    // ch_input_fastas_branched.chunk.view      { meta, fa -> println("CHUNKER:ch_input_fastas_branched.chunk: $meta | $fa") }
+    // ch_input_fastas_branched.to_chunk.view { meta, fa -> println("CHUNKER:ch_input_fastas_branched.to_chunk: $meta | $fa") }
+
+    ch_input_fastas_branched.to_chunk
         .splitFasta(
-            by: chunk_mapping,
-            decompress: true,
+            by: chunk,
+            decompress: in_decompress,
             file: "chunk",
-            compress: true
+            compress: out_compress
         )
         .map { meta, file ->
-            def chk = (file =~ /(chunk\.\d+)\.gz/)[ 0 ][ 1 ]
+            def chk = (file =~ /(chunk\.\d+)(?:\.gz)?$/)[ 0 ][ 1 ]
             def id_former = meta.id
             def id_new    = meta.id + "." + chk
-            [ [ id:id_new, id_former:id_former ] , file ]
+            [ [ id:id_new, id_former:id_former, start_from:meta.start_from ] , file ]
         }
-        .set { ch_chunkies }
-
-    ch_seq_data
-        .chunked
-        .concat(ch_chunkies)
-        .set { fasta }
-
+        .concat(ch_input_fastas_branched.chunk)
+        .set { fastas }
 
     emit:
-    fasta
+    fastas
 }
