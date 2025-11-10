@@ -22,7 +22,8 @@ include { SET_CHUNK_NUM_CHANNEL                    } from '../subworkflows/local
 include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL   } from '../subworkflows/local/set_value_channel'
 include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL     } from '../subworkflows/local/set_value_channel'
 include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel'
-include { CHUNKER                                  } from '../subworkflows/local/chunker'
+include { CHUNKER as CHUNKER_BAMTOOLS_OUT          } from '../subworkflows/local/chunker'
+include { CHUNKER as CHUNKER_INPUT_FASTAS          } from '../subworkflows/local/chunker'
 
 //
 // MODULE: Local to the pipeline
@@ -111,7 +112,7 @@ workflow ISOSEQ {
     ch_pbccs_out_bam_updated
         .concat(ch_seq_data.lima.map { meta, bam, _pbi -> [ meta, bam ] })
         .set { ch_lima_input }
-    //ch_lima_input.view { meta, bam -> println("ch_lima_input: $meta | $bam") }
+    // ch_lima_input.view { meta, bam -> println("ch_lima_input: $meta | $bam") }
     LIMA(ch_lima_input, SET_PRIMERS_CHANNEL.out.data)  // Remove primers from CCS
 
     // LIMA: Add the samplesheet's refine inputs to the queue and run isoseq refine
@@ -121,15 +122,27 @@ workflow ISOSEQ {
     // ch_isoseq_refine_input.view { meta, bam -> println("ch_isoseq_refine_input: $meta | $bam") }
     ISOSEQ_REFINE(ch_isoseq_refine_input, SET_PRIMERS_CHANNEL.out.data) // Discard CCS without polyA tails, remove it from the other
 
-    // GSTAMA_POLYACLEANUP: Convert to fasta and run polyAcleanup
+    // Convert bam files to fasta
     BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)        // Convert bam to fasta
-    GSTAMA_POLYACLEANUP(BAMTOOLS_CONVERT.out.data) // Clean polyA tails from reads
+    // BAMTOOLS_CONVERT.out.data.view { meta, fa -> println("BAMTOOLS_CONVERT.out.data: $meta | $fa") }
 
-    GSTAMA_POLYACLEANUP.out.fasta.view { meta, fa -> println("GSTAMA_POLYACLEANUP.out.fasta: $meta | $fa") }
-    CHUNKER(GSTAMA_POLYACLEANUP.out.fasta, ch_seq_data.mapping, params.chunk_mapping)
-    CHUNKER.out.fasta.view { meta, fa -> println("CHUNKER.out.fasta: $meta | $fa") }
+    // Split fastas into chunks
+    CHUNKER_BAMTOOLS_OUT(BAMTOOLS_CONVERT.out.data, params.chunk_mapping, false, false) // false, false == no need to decompress input, don't compress output
+    // CHUNKER_BAMTOOLS_OUT.out.fastas.view { meta, fa -> println("CHUNKER_BAMTOOLS_OUT.out.fasta: $meta | $fa") }
+
+    // GSTAMA_POLYACLEANUP: Convert to fasta and run polyAcleanup
+    GSTAMA_POLYACLEANUP(CHUNKER_BAMTOOLS_OUT.out.fastas) // Clean polyA tails from reads
+    // GSTAMA_POLYACLEANUP.out.fasta.view { meta, fa -> println("GSTAMA_POLYACLEANUP.out.fasta: $meta | $fa") }
+
+    // Split user fasta and add them the main channel
+    CHUNKER_INPUT_FASTAS(ch_seq_data.mapping.map { meta, fasta, _pbi -> [ meta, fasta ] }, params.chunk_mapping, true, false)
+    // CHUNKER_INPUT_FASTAS.out.fastas.view { meta, fa -> println("CHUNKER_INPUT_FASTAS.out.fasta: $meta | $fa") }
 
     // MAPPING: Split samplesheet's fasta files, add them to the queue and run mapping
+    GSTAMA_POLYACLEANUP.out.fasta
+        .concat(CHUNKER_INPUT_FASTAS.out.fastas)
+        .set { ch_input_fastas }
+    // ch_input_fastas.view { meta, fa -> println("ch_input_fastas.out.fasta: $meta | $fa") }
 
     // Align FLNCs: User can choose between minimap2 and uLTRA aligners
     if (params.aligner == "ultra") {
@@ -137,7 +150,7 @@ workflow ISOSEQ {
         ULTRA_INDEX(                                                            // Index GTF file before alignment
             SET_FASTA_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] },
             GNU_SORT.out.sorted)
-        GUNZIP(CHUNKER.out.fasta)                                                 // uncompress fastas (gz not supported by uLTRA)
+        GUNZIP(ch_input_fastas)                                                 // uncompress fastas (gz not supported by uLTRA)
 
         // The ultra index channel must be the same size as the reads/GUNZIP channel.
         // join: gather all index files into one channel
@@ -157,7 +170,7 @@ workflow ISOSEQ {
     }
     else if (params.aligner == "minimap2") {
         MINIMAP2_ALIGN(                    // Align read against genome
-            CHUNKER.out.fasta,
+            ch_input_fastas,
             [ [id:'genome'], file(params.fasta) ],
             channel.value(true),
             channel.value("bai"),
