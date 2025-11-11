@@ -104,8 +104,11 @@ workflow PIPELINE_INITIALISATION {
         .fromList(
             samplesheetToList(
                 params.input,
-                "${projectDir}/assets/schema_input.json"))
-        .flatMap { it -> create_samplesheet_channel(it, params.chunk_ccs) }
+                "${projectDir}/assets/schema_input.json").withIndex())
+        .flatMap { pair ->
+            def row = pair[0]
+            def counter = pair[1] as int
+            create_samplesheet_channel(row, params.chunk_ccs, counter) }
         .set { ch_samplesheet }
 
     emit:
@@ -279,7 +282,7 @@ def methodsDescriptionText(mqc_methods_yaml) {
 }
 
 // Function to get to create samplesheet channel for isoseq entrypoint [ meta, bam, pbi  ]
-def create_samplesheet_channel(row, chunk) {
+def create_samplesheet_channel(row, chunk, counter) {
     // Check if mandatory seq_data file exists
     if (!file(row[1]).exists()) {
         exit 1, "ERROR: Please check input samplesheet -> BAM file does not exist!\n${row[1]}"
@@ -291,13 +294,23 @@ def create_samplesheet_channel(row, chunk) {
             exit 1, "ERROR: Please check input samplesheet -> PBI file does not exist!\n${row[2]}"
         }
 
-        return (1..chunk).collect { [ row[0], file(row[1]), file(row[2]) ] }
+        return (1..chunk)
+            .collect {
+                [
+                    [
+                        id:row[0].id + "_" + counter,
+                        start_from:row[0].start_from
+                    ],
+                    file(row[1]),
+                    file(row[2])
+                ]
+            }
 
     }
     else if ( row[0].start_from in ['lima', 'refine']) {
         return [ [
             [
-                id:row[0].id,
+                id:row[0].id + "_" + counter,
                 start_from:row[0].start_from
             ],
             file(row[1]),
@@ -307,7 +320,7 @@ def create_samplesheet_channel(row, chunk) {
     else if ( row[0].start_from == 'mapping') {
         return [ [
             [
-                id:row[0].id,
+                id:row[0].id + "_" + counter,
                 start_from:row[0].start_from,
                 single_end:true
             ],

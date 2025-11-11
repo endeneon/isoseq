@@ -180,9 +180,17 @@ workflow ISOSEQ {
     }
 
     GSTAMA_COLLAPSE.out.bed // replace id with the former sample id and group files by sample
-        .map { meta, file -> [ [ id:meta.id_former ], file ] }
+        .map { meta, file ->
+            def sample = meta.id_former.replaceAll(/_\d+/, '')
+            [
+                [ id:sample ],
+                file
+            ]
+        }
         .groupTuple()
         .set { ch_tcollapse }
+
+    ch_tcollapse.view { meta, fa -> println("ch_tcollapse: $meta | $fa") }
 
     cap_value = params.capped == true ? channel.value("capped") : channel.value("no_cap")
 
