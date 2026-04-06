@@ -18,12 +18,12 @@ include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_isos
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
 //
-include { SET_CHUNK_NUM_CHANNEL                    } from '../subworkflows/local/set_chunk_num_channel'
-include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL   } from '../subworkflows/local/set_value_channel'
-include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL     } from '../subworkflows/local/set_value_channel'
-include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel'
-include { CHUNKER as CHUNKER_BAMTOOLS_OUT          } from '../subworkflows/local/chunker'
-include { CHUNKER as CHUNKER_INPUT_FASTAS          } from '../subworkflows/local/chunker'
+include { SET_CHUNK_NUM_CHANNEL                    } from '../subworkflows/local/set_chunk_num_channel/main'
+include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL   } from '../subworkflows/local/set_value_channel/main'
+include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL     } from '../subworkflows/local/set_value_channel/main'
+include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel/main'
+include { CHUNKER as CHUNKER_BAMTOOLS_OUT          } from '../subworkflows/local/chunker/main'
+include { CHUNKER as CHUNKER_INPUT_FASTAS          } from '../subworkflows/local/chunker/main'
 
 //
 // MODULE: Local to the pipeline
