@@ -28,8 +28,7 @@
                     },
                     {
                         "type": "string",
-                        "pattern": "^none$",
-                        "format": "string"
+                        "pattern": "^none$"
                     }
                 ],
                 "errorMessage": "PacBio Index file for BAM subreads cannot contain spaces and must have extension '.bam.pbi' or being empty"
