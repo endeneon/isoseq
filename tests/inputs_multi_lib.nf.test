@@ -1,12 +1,12 @@
 nextflow_pipeline {
 
-    name "Test pipeline - Minimap2 path"
+    name "Test pipeline inputs multi_lib"
     script "../main.nf"
     tag "pipeline"
     tag "pipeline_isoseq"
-    profile "test_minimap2"
+    profile "test_inputs_multi_lib"
 
-    test("-profile test_minimap2") {
+    test("-profile test_inputs_multi_lib") {
 
         when {
             params {

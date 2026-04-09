@@ -18,10 +18,12 @@ include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_isos
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
 //
-include { SET_CHUNK_NUM_CHANNEL }                    from '../subworkflows/local/set_chunk_num_channel'
-include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL }   from '../subworkflows/local/set_value_channel'
-include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL }     from '../subworkflows/local/set_value_channel'
-include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel'
+include { SET_CHUNK_NUM_CHANNEL                    } from '../subworkflows/local/set_chunk_num_channel/main'
+include { SET_VALUE_CHANNEL as SET_FASTA_CHANNEL   } from '../subworkflows/local/set_value_channel/main'
+include { SET_VALUE_CHANNEL as SET_GTF_CHANNEL     } from '../subworkflows/local/set_value_channel/main'
+include { SET_VALUE_CHANNEL as SET_PRIMERS_CHANNEL } from '../subworkflows/local/set_value_channel/main'
+include { CHUNKER as CHUNKER_BAMTOOLS_OUT          } from '../subworkflows/local/chunker/main'
+include { CHUNKER as CHUNKER_INPUT_FASTAS          } from '../subworkflows/local/chunker/main'
 
 //
 // MODULE: Local to the pipeline
@@ -63,65 +65,84 @@ workflow ISOSEQ {
     take:
     ch_samplesheet // channel: samplesheet read in from --input
     main:
-    //
-    // SET UP VERSIONS CHANNELS
-    //
-    ch_versions = channel.empty()
+
+    // Set version and multiqc channels
+    ch_versions      = channel.empty()
     ch_multiqc_files = channel.empty()
 
-    //
-    // START PIPELINE
-    //
-                                        // Prepare channels for:
-    SET_FASTA_CHANNEL(params.fasta)     // - genome fasta
-    SET_PRIMERS_CHANNEL(params.primers) // - primers fasta
+    // Value channels initialization
+    SET_FASTA_CHANNEL(params.fasta)     // genome fasta
+    SET_PRIMERS_CHANNEL(params.primers) // primers fasta
     if (params.aligner == "ultra") {
-        SET_GTF_CHANNEL(params.gtf)     // - genome gtf
+        SET_GTF_CHANNEL(params.gtf)     // genome gtf
     }
 
+    // Dispatch inputs to redistribute them to their ad hoc entrypoint
+    ch_samplesheet
+        .branch { meta, _seq_data, _pbi ->
+            ccs    : meta.start_from == "ccs"
+            lima   : meta.start_from == "lima"
+            refine : meta.start_from == "refine"
+            mapping: meta.start_from == "mapping"
+        }
+        .set { ch_seq_data }
+    // ch_seq_data.ccs.view    { it -> "BRANCH: ccs    : $it" }
+    // ch_seq_data.lima.view   { it -> "BRANCH: lima   : $it" }
+    // ch_seq_data.refine.view { it -> "BRANCH: refine : $it" }
+    // ch_seq_data.mapping.view{ it -> "BRANCH: mapping: $it" }
 
-// ISOSEQ pipeline entrypoint ##################################################################
-    if (params.entrypoint == "isoseq") {
+    // PBCCS: prepare and run ccs
+    SET_CHUNK_NUM_CHANNEL(params.input, params.chunk_ccs) // - PBCCS parallelization
 
-        SET_CHUNK_NUM_CHANNEL(params.input, params.chunk) // - PBCCS parallelization
+    PBCCS(
+        ch_seq_data.ccs,
+        SET_CHUNK_NUM_CHANNEL.out.chunk_num,
+        params.chunk_ccs) // Generate CCS from raw reads
 
-        ch_subreads_bam = ch_samplesheet.filter { meta, _bam, _pbi -> meta.bam_type != "ccs" } // To cater to bam_type == null which implies subreads
-        ch_ccs_bam      = ch_samplesheet.filter { meta, _bam, _pbi -> meta.bam_type == "ccs" }
-
-        PBCCS(
-            ch_subreads_bam,
-            SET_CHUNK_NUM_CHANNEL.out.chunk_num,
-            params.chunk) // Generate CCS from raw reads
-
-        PBCCS.out.bam // Update meta: update id (+chunkX) and store former id
+    PBCCS.out.bam // Update meta: update id (+chunkX) and store former id
         .map { meta, file ->
             def chk       = (file =~ /.*\.(chunk\d+)\.bam/)[0][1]
             def id_former = meta.id
             def id_new    = meta.id + "." + chk
             return [ [id:id_new, id_former:id_former, single_end:true], file ]
         }
-        .mix (ch_ccs_bam.map { meta, bam, _nothing -> [ [id:meta.id, id_former:meta.id, single_end:true], bam ] })
-        .set { ch_pbccs_bam_updated }
+        .set { ch_pbccs_out_bam_updated }
 
-        ch_lima_input = params.skip_lima ? channel.empty() : ch_pbccs_bam_updated
-        LIMA(ch_lima_input, SET_PRIMERS_CHANNEL.out.data)  // Remove primers from CCS
+    // LIMA: Add the samplesheet's LIMA inputs to the queue and run lima
+    ch_pbccs_out_bam_updated
+        .concat(ch_seq_data.lima.map { meta, bam, _pbi -> [ meta, bam ] })
+        .set { ch_lima_input }
+    // ch_lima_input.view { meta, bam -> println("ch_lima_input: $meta | $bam") }
+    LIMA(ch_lima_input, SET_PRIMERS_CHANNEL.out.data)  // Remove primers from CCS
 
-        ch_isoseq_refine_input = params.skip_lima ? ch_pbccs_bam_updated : LIMA.out.bam
-        ISOSEQ_REFINE(ch_isoseq_refine_input, SET_PRIMERS_CHANNEL.out.data) // Discard CCS without polyA tails, remove it from the other
+    // LIMA: Add the samplesheet's refine inputs to the queue and run isoseq refine
+    LIMA.out.bam
+        .concat(ch_seq_data.refine.map { meta, bam, _pbi -> [ meta, bam ] })
+        .set { ch_isoseq_refine_input }
+    // ch_isoseq_refine_input.view { meta, bam -> println("ch_isoseq_refine_input: $meta | $bam") }
+    ISOSEQ_REFINE(ch_isoseq_refine_input, SET_PRIMERS_CHANNEL.out.data) // Discard CCS without polyA tails, remove it from the other
 
-        BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)        // Convert bam to fasta
-        GSTAMA_POLYACLEANUP(BAMTOOLS_CONVERT.out.data) // Clean polyA tails from reads
-    }
+    // Convert bam files to fasta
+    BAMTOOLS_CONVERT(ISOSEQ_REFINE.out.bam)        // Convert bam to fasta
+    // BAMTOOLS_CONVERT.out.data.view { meta, fa -> println("BAMTOOLS_CONVERT.out.data: $meta | $fa") }
 
+    // Split fastas into chunks
+    CHUNKER_BAMTOOLS_OUT(BAMTOOLS_CONVERT.out.data, params.chunk_mapping, false, false) // false, false == no need to decompress input, don't compress output
+    // CHUNKER_BAMTOOLS_OUT.out.fastas.view { meta, fa -> println("CHUNKER_BAMTOOLS_OUT.out.fasta: $meta | $fa") }
 
-// MAP pipeline entrypoint ##################################################################
-    if (params.entrypoint == "isoseq") {
-        ch_reads_to_map = GSTAMA_POLYACLEANUP.out.fasta
-    }
-    else if (params.entrypoint == "map") {
-        ch_reads_to_map = ch_samplesheet
-    }
+    // GSTAMA_POLYACLEANUP: Convert to fasta and run polyAcleanup
+    GSTAMA_POLYACLEANUP(CHUNKER_BAMTOOLS_OUT.out.fastas) // Clean polyA tails from reads
+    // GSTAMA_POLYACLEANUP.out.fasta.view { meta, fa -> println("GSTAMA_POLYACLEANUP.out.fasta: $meta | $fa") }
 
+    // Split user fasta and add them the main channel
+    CHUNKER_INPUT_FASTAS(ch_seq_data.mapping.map { meta, fasta, _pbi -> [ meta, fasta ] }, params.chunk_mapping, true, false)
+    // CHUNKER_INPUT_FASTAS.out.fastas.view { meta, fa -> println("CHUNKER_INPUT_FASTAS.out.fasta: $meta | $fa") }
+
+    // MAPPING: Split samplesheet's fasta files, add them to the queue and run mapping
+    GSTAMA_POLYACLEANUP.out.fasta
+        .concat(CHUNKER_INPUT_FASTAS.out.fastas)
+        .set { ch_input_fastas }
+    // ch_input_fastas.view { meta, fa -> println("ch_input_fastas.out.fasta: $meta | $fa") }
 
     // Align FLNCs: User can choose between minimap2 and uLTRA aligners
     if (params.aligner == "ultra") {
@@ -129,7 +150,7 @@ workflow ISOSEQ {
         ULTRA_INDEX(                                                            // Index GTF file before alignment
             SET_FASTA_CHANNEL.out.data.map { it -> [ [id:'genome'], it ] },
             GNU_SORT.out.sorted)
-        GUNZIP(ch_reads_to_map)                                                 // uncompress fastas (gz not supported by uLTRA)
+        GUNZIP(ch_input_fastas)                                                 // uncompress fastas (gz not supported by uLTRA)
 
         // The ultra index channel must be the same size as the reads/GUNZIP channel.
         // join: gather all index files into one channel
@@ -139,7 +160,7 @@ workflow ISOSEQ {
             ULTRA_INDEX.out.pickle
             .join(ULTRA_INDEX.out.database)
             .combine(GUNZIP.out.gunzip)
-            .map { meta1, pickle, db, meta2, reads -> [meta1, pickle, db] }
+            .map { meta1, pickle, db, _meta2, _reads -> [ meta1, pickle, db ] }
 
         ULTRA_ALIGN(
             GUNZIP.out.gunzip,
@@ -149,8 +170,8 @@ workflow ISOSEQ {
     }
     else if (params.aligner == "minimap2") {
         MINIMAP2_ALIGN(                    // Align read against genome
-            ch_reads_to_map,
-            [ [id:"Dummy"], file(params.fasta) ],
+            ch_input_fastas,
+            [ [id:'genome'], file(params.fasta) ],
             channel.value(true),
             channel.value("bai"),
             channel.value(false),
@@ -159,9 +180,17 @@ workflow ISOSEQ {
     }
 
     GSTAMA_COLLAPSE.out.bed // replace id with the former sample id and group files by sample
-        .map { [ [id:it[0].id_former], it[1] ] }
+        .map { meta, file ->
+            def sample = meta.id_former.replaceAll(/_\d+/, '')
+            [
+                [ id:sample ],
+                file
+            ]
+        }
         .groupTuple()
         .set { ch_tcollapse }
+
+    ch_tcollapse.view { meta, fa -> println("ch_tcollapse: $meta | $fa") }
 
     cap_value = params.capped == true ? channel.value("capped") : channel.value("no_cap")
 
@@ -201,13 +230,11 @@ workflow ISOSEQ {
     //
     // MODULE: Pipeline reporting
     //
-    if (params.entrypoint == "isoseq") {
-        ch_versions = ch_versions.mix(PBCCS.out.versions)
-        ch_versions = ch_versions.mix(LIMA.out.versions)
-        ch_versions = ch_versions.mix(ISOSEQ_REFINE.out.versions)
-        ch_versions = ch_versions.mix(BAMTOOLS_CONVERT.out.versions)
-        ch_versions = ch_versions.mix(GSTAMA_POLYACLEANUP.out.versions)
-    }
+    ch_versions = ch_versions.mix(PBCCS.out.versions)
+    ch_versions = ch_versions.mix(LIMA.out.versions)
+    ch_versions = ch_versions.mix(ISOSEQ_REFINE.out.versions)
+    ch_versions = ch_versions.mix(BAMTOOLS_CONVERT.out.versions)
+    ch_versions = ch_versions.mix(GSTAMA_POLYACLEANUP.out.versions)
 
     if (params.aligner == "ultra") {
         ch_versions = ch_versions.mix(GUNZIP.out.versions)
@@ -232,7 +259,6 @@ workflow ISOSEQ {
             name: 'nf_core_isoseq_software_mqc_versions.yml',
             sort: true,
             newLine: true)
-        .view()
 
     //
     // MODULE: MultiQC
@@ -254,19 +280,17 @@ workflow ISOSEQ {
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml', sort: true))
 
     // ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
-    if (params.entrypoint == "isoseq") {
-        ch_multiqc_files = ch_multiqc_files.mix(PBCCS.out.report_json.collect{it[1]}.ifEmpty([]))
-        ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.summary.collect{it[1]}.ifEmpty([]))
-        ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.counts.collect{it[1]}.ifEmpty([]))
-    }
+    ch_multiqc_files = ch_multiqc_files.mix(PBCCS.out.report_json.collect{it[1]}.ifEmpty([]))
+    ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.summary.collect{it[1]}.ifEmpty([]))
+    ch_multiqc_files = ch_multiqc_files.mix(LIMA.out.counts.collect{it[1]}.ifEmpty([]))
 
     MULTIQC (
         ch_multiqc_files.collect(),
         ch_multiqc_config.toList(),
         ch_multiqc_custom_config.toList(),
         ch_multiqc_logo.toList(),
-        channel.empty(),
-        channel.empty()
+        [],
+        []
     )
 
     emit:

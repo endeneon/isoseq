@@ -39,7 +39,7 @@ workflow PIPELINE_INITIALISATION {
 
     main:
 
-    ch_versions = Channel.empty()
+    ch_versions = channel.empty()
 
     //
     // Print version and exit if required and dump pipeline parameters to JSON file
@@ -100,31 +100,16 @@ workflow PIPELINE_INITIALISATION {
     //
     // Create channel from input file provided through params.input
     //
-    if (params.entrypoint == "isoseq") {
-        Channel
-            .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
-            .flatMap { create_pbccs_channel(it, params.chunk) }
-            .set { ch_samplesheet }
-    }
-
-    if (params.entrypoint == "map") {
-        Channel
-            .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
-            .flatMap { create_reads_channel(it) }
-            .splitFasta(
-                by: params.chunk,
-                decompress: true,
-                file: "chunk",
-                compress: true
-            )
-            .map {
-                def chk = (it[1] =~ /(chunk\.\d+)\.gz/)[ 0 ][ 1 ]
-                def id_former = it[0].id
-                def id_new    = it[0].id + "." + chk
-                [ [ id:id_new, id_former:id_former ] , it[1] ]
-            }
-            .set { ch_samplesheet }
-    }
+    channel
+        .fromList(
+            samplesheetToList(
+                params.input,
+                "${projectDir}/assets/schema_input.json").withIndex())
+        .flatMap { pair ->
+            def row = pair[0]
+            def counter = pair[1] as int
+            create_samplesheet_channel(row, params.chunk_ccs, counter) }
+        .set { ch_samplesheet }
 
     emit:
     samplesheet = ch_samplesheet
@@ -297,30 +282,53 @@ def methodsDescriptionText(mqc_methods_yaml) {
 }
 
 // Function to get to create samplesheet channel for isoseq entrypoint [ meta, bam, pbi  ]
-def create_pbccs_channel(row, chunk) {
-
+def create_samplesheet_channel(row, chunk, counter) {
+    // Check if mandatory seq_data file exists
     if (!file(row[1]).exists()) {
         exit 1, "ERROR: Please check input samplesheet -> BAM file does not exist!\n${row[1]}"
     }
 
-    if ( row[0].bam_type == 'ccs' ) {
-        return [ [ row[0], file(row[1]), null ] ]
+    // returns depends on the starting point
+    if ( row[0].start_from == 'ccs' ) { // pbccs can work on chunks, need to as many entries as defined chunks
+        if (!file(row[2]).exists()) {
+            exit 1, "ERROR: Please check input samplesheet -> PBI file does not exist!\n${row[2]}"
+        }
+
+        return (1..chunk)
+            .collect {
+                [
+                    [
+                        id:row[0].id + "_" + counter,
+                        start_from:row[0].start_from
+                    ],
+                    file(row[1]),
+                    file(row[2])
+                ]
+            }
+
     }
-
-    if (!file(row[2]).exists()) {
-        exit 1, "ERROR: Please check input samplesheet -> PBI file does not exist!\n${row[2]}"
+    else if ( row[0].start_from in ['lima', 'refine']) {
+        return [ [
+            [
+                id:row[0].id + "_" + counter,
+                start_from:row[0].start_from
+            ],
+            file(row[1]),
+            null
+        ] ]
     }
-
-    def array = (1..chunk).collect { [ row[0], file(row[1]), file(row[2]) ] }
-
-    return array
-}
-
-// Function to get to create samplesheet channel for map entrypoint [ meta, reads ]
-def create_reads_channel(row) {
-    if (!file(row[3]).exists()) {
-        exit 1, "ERROR: Please check input samplesheet -> reads file does not exist!\n${row[3]}"
+    else if ( row[0].start_from == 'mapping') {
+        return [ [
+            [
+                id:row[0].id + "_" + counter,
+                start_from:row[0].start_from,
+                single_end:true
+            ],
+            file(row[1]),
+            null
+        ] ]
     }
-
-    return [ [ row[0], file(row[3]) ] ]
+    else {
+        exit 1, "ERROR: Please check input samplesheet -> start_from value should be either: ccs, lima, refine, or mapping. (${row[3]})"
+    }
 }

@@ -25,43 +25,31 @@ Use `--input` parameter to specify its location.
 
 The samplesheet is a comma-separated file with 4 columns, and a header row as shown in the examples below.
 
-| Column     | Description                                                                                                                                                               |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sample`   | Custom sample name. Spaces in sample names are automatically converted to underscores (`_`).                                                                              |
-| `bam_type` | Type of data in the BAM file: `subreads` or `ccs`.                                                                                                                        |
-| `bam`      | Full path to isoseq subreads in `bam` format.                                                                                                                             |
-| `pbi`      | Full path to Pacbio index generated with [pbindex](https://github.com/pacificbiosciences/pbbam/). File's name must be compose of bam file name with the `.pbi` extension. |
-| `reads`    | Set of long reads to analyse in fasta format. The file must be gziped (.fa.gz).                                                                                           |
+| Column       | Description                                                                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample`     | Sample name. Spaces in sample names are automatically converted to underscores (`_`).                                                                                                                                                     |
+| `seq_data`   | The path to the sequence file. A BAM file for subreads, Consensus Circular Sequences or Full Length sequences. A fasta file for long reads.                                                                                               |
+| `pbi`        | In case `seq_data` is a subreads BAM, the path to Pacbio index generated with [pbindex](https://github.com/pacificbiosciences/pbbam/). File's name must be compose of bam file name with the `.pbi` extension. In the other cases, `none` |
+| `start_from` | The value depend of the seq_data file. `ccs` for subreads, `lima` for ccs sequences, `refine` for Full Length data and `mapping` for long reads.                                                                                          |
 
-Starting from `pbccs` (`isoseq` entrypoint), the columns `sample`, `bam`, `pbi` are mandatory.
-The `reads` column must be set to `None`.
-
-```console
-sample,bam,pbi,reads
-sample1,sample1.subreads.bam,sample1.subreads.bam.pbi,None
-sample2,sample2.subreads.bam,sample2.subreads.bam.pbi,None
+```csv
+sample,seq_data,pbi,start_from
+sample1,sample1.subreads.bam,sample1.subreads.bam.pbi,ccs
+sample2,sample2.ccs.bam,none,lima
+sample3,sample3.fl.primer_5p--primer_3p.bam,none,refine
+sample4,sample4.long_reads.fa.gz,none,mapping
 ```
 
-If CCS consensuses are available for a sample, `pbccs` can be skipped. Columns `sample`, `bam`, `bam_type` are mandatory in this case.
-The `reads` and `pbi` column must be set to `None`.
+If multiple cells have been run for the same sample, the sample ID can be used several time in the samplesheet. Each dataset will be annalysed in parallel and then be merge with TAMA.
 
-```console
-sample,bam_type,bam,pbi,reads
-sample1,ccs,sample1.ccs.bam,None,None
-sample2,subreads,sample2.subreads.bam,sample2.subreads.bam.pbi,None
-sample3,subreads,sample3.subreads.bam,sample3.subreads.bam.pbi,None
+```csv
+sample,seq_data,pbi,start_from
+sample1,sample1_cell1.subreads.bam,sample1_cell1.subreads.bam.pbi,ccs
+sample1,sample1_cell2.subreads.bam,sample1_cell2.subreads.bam.pbi,ccs
+sample2,sample1.subreads.bam,sample2.subreads.bam.pbi,ccs
 ```
 
-If the `map` entrypoint is used, the `reads` column must be filled with a gzipped fasta file with long reads and `sample` must be set.
-The `bam` and `pbi` columns have to be set to `None`.
-
-```console
-sample,bam,pbi,reads
-sample1,None,None,sample1.fa.gz
-sample2,None,None,sample2.fa.gz
-```
-
-An [example samplesheet](../assets/samplesheet.csv) has been provided with the pipeline.
+Some example samplesheets can be found on the [github repository](https://github.com/nf-core/isoseq/tree/master/assets).
 
 ### Primer file
 
@@ -98,14 +86,6 @@ Two aligners are available. The `uLTRA` aligner helps to detect small exons with
 
 ```console
 --aligner '[ultra,minimap2]'
-```
-
-### Entrypoint
-
-The mapping and the alignment analysis are agnostic to the kind long reads used. If your sequencing company provides pre-computed HiFi reads or you want to use nanopore sequences, you can skip the isoseq preprocessing and start the analysis from the mapping step.
-
-```console
---entrypoint 'map'
 ```
 
 ## Running the pipeline

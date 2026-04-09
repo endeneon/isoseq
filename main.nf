@@ -80,12 +80,14 @@ workflow {
         params.show_hidden
     )
 
+
     //
     // WORKFLOW: Run main workflow
     //
     NFCORE_ISOSEQ (
         PIPELINE_INITIALISATION.out.samplesheet
     )
+
     //
     // SUBWORKFLOW: Run completion tasks
     //

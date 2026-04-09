@@ -1,5 +1,5 @@
 {
-    "-profile test_minimap2": {
+    "-profile test_inputs_ccs": {
         "content": [
             {
                 "BAMTOOLS_CONVERT": {
@@ -419,6 +419,6 @@
             "nf-test": "0.9.3",
             "nextflow": "25.10.0"
         },
-        "timestamp": "2025-11-11T14:37:29.278390985"
+        "timestamp": "2025-11-11T14:29:10.117074003"
     }
 }

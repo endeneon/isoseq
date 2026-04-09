@@ -1,12 +1,12 @@
 nextflow_pipeline {
 
-    name "Test pipeline"
+    name "Test pipeline inputs ccs lima refine map"
     script "../main.nf"
     tag "pipeline"
     tag "pipeline_isoseq"
-    profile "test_ultra_map_entrypoint"
+    profile "test_inputs_ccs_lima_refine_map"
 
-    test("-profile test_ultra_map_entrypoint") {
+    test("-profile test_inputs_ccs_lima_refine_map") {
 
         when {
             params {

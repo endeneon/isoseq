@@ -3,6 +3,26 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v2.2.0 - [XX/XX/XXXX]
+
+### `Added`
+
+- Updated nf-core template to version 3.4.1
+- Remove `skip_lima` and `entrypoint` in favor of the new samplesheet / input file injection system
+- Redefined samplesheet format to allows multiple type inputs (subreads, ccs, full length or long reads fasta)
+
+### `Fixed`
+
+- Update modules (TO BE LISTED)
+
+  | Tool    | Previous version | New version |
+  | ------- | ---------------- | ----------- |
+  | XXXXXXX | XXXXXX           | XXXX        |
+
+### `Dependencies`
+
+### `Deprecated`
+
 ## v2.1.0 - [15/01/2025]
 
 ### `Added`

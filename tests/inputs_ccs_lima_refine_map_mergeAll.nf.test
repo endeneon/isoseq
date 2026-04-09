@@ -1,12 +1,12 @@
 nextflow_pipeline {
 
-    name "Test pipeline"
+    name "Test pipeline inputs ccs lima refine map and merge all samples"
     script "../main.nf"
     tag "pipeline"
     tag "pipeline_isoseq"
-    profile "test_ccs"
+    profile "test_inputs_ccs_lima_refine_map_mergeAll"
 
-    test("-profile test_ccs") {
+    test("-profile test_inputs_ccs_lima_refine_map_mergeAll") {
 
         when {
             params {
